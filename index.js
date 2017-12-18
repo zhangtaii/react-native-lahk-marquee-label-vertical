@@ -1,127 +1,109 @@
 import React, { Component } from 'react';
-import { View, Animated, Easing, Text } from 'react-native';
+import { View, Animated, Easing } from 'react-native';
 
 export default class MarqueeLabelVertical extends Component {
   state = {
-    textWidth: 0,
-    textHeight: 0,
-    bgViewHeight: 0,
-    duration: 0,
+    started: false,
+    textArr: this.props.textArr,
     text: '',
-    animation: null
   };
 
   componentWillMount() {
-    this.setState({
-      text: this.props.text || this.props.children || ''
-    })
-    this.animation = null
     this.animatedTransformY = new Animated.Value(0);
+    this.bgViewHeight = 0;
+    this.textHeight = 0;
+    this.duration = 0;
+
+    this.shouldFinish = false;
   }
 
   componentWillUnmount() {
-    if (this.state.animation !== null) {
-      this.state.animation.stop();
-    }
-  }
-
-  componentWillReceiveProps(nextProps) {
-    let newText = nextProps.text || nextProps.children || '';
-    let oldText = this.props.text || this.props.children || '';
-    if (newText !== oldText) {
-      this.state.animation.stop();
-      this.setState({
-        text: newText,
-        textWidth: 0,
-        textHeight: 0,
-        duration: 0,
-        animation: null
-      });
-    }
-  }
-
-  componentDidUpdate(prevProps, prevState) {
-    let { textHeight, bgViewHeight, duration, animation } = this.state;
-
-    if (duration === 0) {
-      if (textHeight === 0 || bgViewHeight === 0) { return }
-
-      const { duration, speed } = this.props;
-      if (duration !== undefined) {
-        this.setState({
-          duration: duration
-        });
-      } else if (speed !== undefined) {
-        this.setState({
-          duration: ((bgViewHeight + textHeight) / speed) * 1000
-        });
-      }
-    } else {
-      if (animation === null) {
-        this.animatedTransformY.setValue(bgViewHeight);
-        this.setState({
-          animation: Animated.timing(this.animatedTransformY, {
-            toValue: -textHeight,
-            duration: duration,
-            useNativeDriver: true,
-            easing: Easing.linear
-          })
-        })
-      } else {
-        animation.start(() => {
-          this.setState({
-            animation: null
-          })
-        });
-      }
-    }
+    this.shouldFinish = true;
   }
 
   textOnLayout(e) {
-    this.setState({
-      textWidth: e.nativeEvent.layout.width,
-      textHeight: e.nativeEvent.layout.height
-    });
+    this.textHeight = e.nativeEvent.layout.height;
+
+    if (this.bgViewHeight !== 0) {
+      this.prepareToAnimate()
+    }
   }
 
   bgViewOnLayout(e) {
-    this.setState({
-      bgViewHeight: e.nativeEvent.layout.height
+    this.bgViewHeight = e.nativeEvent.layout.height;
+
+    if (this.textHeight !== 0) {
+      this.prepareToAnimate()
+    }
+  }
+
+  prepareToAnimate() {
+    // Calculate this.duration by this.props.duration / this.props.speed
+    // If this.props.duration is set, discard this.props.speed
+    const { duration, speed } = this.props;
+    if (duration !== undefined) {
+      this.duration = duration;
+    } else if (speed !== undefined) {
+      this.duration = ((this.bgViewHeight + this.textHeight) / speed) * 1000;
+    }
+    this.animate();
+  }
+
+  animate() {
+    this.animatedTransformY.setValue(this.bgViewHeight);
+    if (!this.state.started) {
+      this.setState({
+        started: true
+      });
+    }
+    Animated.timing(this.animatedTransformY, {
+      toValue: -this.textHeight,
+      duration: this.duration,
+      useNativeDriver: true,
+      easing: Easing.linear
+    }).start(() => {
+      if (!this.shouldFinish) {
+        let {textArr} = this.state;
+        let text = textArr.shift();
+        textArr.push(text);
+        this.setState({
+          textArr,
+          text,
+        })
+        this.animate()
+      }
     });
   }
 
   render() {
-    const { 
+    const {
+      children,
+      // text,
       bgViewStyle, // Backgound View Custom Styles
-      textStyle, // Text Custom Styles, e.g. {textAlign: 'center'}
+      textStyle, // Text Custom Styles
     } = this.props;
 
-    const { text, animation } = this.state;
+    const {
+      started,
+      text,
+    } = this.state;
 
     return (
-      <View 
+      <View
         style={{ ...styles.bgViewStyle, ...bgViewStyle }}
         onLayout={(event) => this.bgViewOnLayout(event)}
       >
-        <Animated.Text 
+        <Animated.Text
           style={{
             transform: [{ translateY: this.animatedTransformY }],
-            opacity: animation !== null ? 1 : 0,
+            opacity: started ? 1 : 0,
             ...styles.textStyle,
-            ...textStyle
-          }}
-        >
-          {text}
-        </Animated.Text>
-        <Text
-          style={{
-            ...styles.textSizeMeasuringViewStyle,
             ...textStyle
           }}
           onLayout={(event) => this.textOnLayout(event)}
         >
-          {text}
-        </Text>
+          {children || text || ' '}
+        </Animated.Text>
       </View>
     );
   }
@@ -138,9 +120,5 @@ const styles = {
   },
   textStyle: {
     width: '100%'
-  },
-  textSizeMeasuringViewStyle: {
-    opacity: 0,
-    fontSize: 20
   }
 };
